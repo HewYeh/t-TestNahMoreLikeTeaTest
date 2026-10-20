@@ -1,10 +1,10 @@
 ---
 title: "Inference Simulations"
 subtitle: "PSYC 201A, Simulation Lab 2"
-author: "Your name here"
+author: "Hew Yeh"
 date: today
 format:
-  html:
+  pdf:
     toc: true
     embed-resources: true
 execute:
@@ -78,7 +78,8 @@ tea_data <- make_tea_data(n_total = 18, delta = .5)
 Now, make a new data frame (call it `tea_data_highn`) with an N of 48, or something higher if you want. You need to call the custom function. Keep the same small effect (`delta = .5`): we come back to this experiment in Parts 2 and 3.
 
 ```{r}
-
+tea_data_highn <- make_tea_data(n_total = 9999, delta = .5)
+tea_data_highn
 ```
 
 To do: OK, look at these data. How long are they, what are the column names? Look at them in your console by copy and pasting the variable names into R.
@@ -89,7 +90,10 @@ To do: Write basic tidyverse code to calculate the mean of each condition (hint:
 
 ```{r}
 
+ summary(tea_data_highn)
  
+ tea_data_highn |> group_by(condition) |> summarize(SampleMean = mean(rating))
+ # Wow that is crazy because yeah our delta was 0.5. And this is a difference of 0.5 but that also kinda makes sense considering that the sample size is so high.
 ```
 
 ## In this first draw, was it significant with N=9 or N=24 per group?
@@ -107,8 +111,11 @@ out_low_n <- tea_data %>%
   t.test(rating ~ condition, data = .,  var.equal = TRUE)
 
 out_high_n <- tea_data_highn %>%
-  t.test(rating ~ condition, data = ., var.equal = TRUE) 
+  t.test(rating ~ condition, data = ., var.equal = TRUE)
 ```
+
+
+In the high $n$ condition, we a $t$-test was ran to assess the difference in mean ratings between the milk-first and tea-first condition. The ratings in the milk first condition were significantly higher than in the tea first condition, $t$(`{r} out_high_n$parameter` ) = `{r} out_high_n$statistic`, `{r} out_high_n$p.value`.
 
 ### Simulate 1000 experiments
 
@@ -125,7 +132,9 @@ samps <- tibble(sim = 1:1000) |>
 OK, copy this but now change it so that you 48 participants per experiment
 
 ```{r}
-samps_highn <-...
+samps_highn <- tibble(sim = 1:1000) |> 
+  mutate(data = map(sim, \(i) make_tea_data(n_total = 48, delta = 1.5))) |>  # simulate
+  unnest(cols = data) # wrangle
 ```
 
 ### Summarize both of these simulations
@@ -161,7 +170,8 @@ tea_data_highn_summary <- samps_highn |>
 Let's make a plot to plot the differences in ratings across conditions for the low-n condition. You'll need to use ggplot or `hist`
 
 ```{r}
-
+ggplot(data=tea_data_summary, aes(x=delta)) +
+  geom_histogram(alpha=.8, bins=20) 
 ```
 
 ### Plot difference for higher-n
@@ -169,7 +179,7 @@ Let's make a plot to plot the differences in ratings across conditions for the l
 To do: What's different about this distribution vs the one we just plotted?
 
 ```{r}
-
+hist(tea_data_summary$delta)
 ```
 
 **Bonus** What happens if you run it again, but this time try changing the variance / mean of the effect when you change the `delta` and `sigma` values in the data simulation.
@@ -188,13 +198,26 @@ Call the simulated experiments `null_model` and use 18 participants per experime
 
 ```{r}
 # Simulate the null distribution
+null_model <- tibble(sim = 1:1000) |>
+  mutate(data = map(sim, \(i) make_tea_data(n_total = 18, delta = 0))) |>
+  unnest(cols = data)
+
+null_model_summary <- null_model |>
+  group_by(sim, condition) |>
+  summarise(mean_rating = mean(rating)) |>
+  group_by(sim) |>
+  summarise(delta = mean_rating[condition == "milk first"] -
+              mean_rating[condition == "tea first"])
+
   
 ```
 
 Visualize what this null distribution actually looks like.
 
 ```{r}
-
+ggplot(data=null_model_summary, aes(x=delta)) +
+  geom_histogram(alpha=.8, bins=50) +
+  theme_classic()
 ```
 
 ### Method 2: Shuffling
@@ -229,6 +252,8 @@ tea_data_highn_shuffled_summary <- tea_data_highn_shuffled_summary %>%
 ```
 
 To do: what does this histogram look like and why?
+
+It looks like a symmetrical gaussian. This is because when you shuffle the labels, these are the distribuions of deltas you would estimate in a given sample, assuming that the original delta was 0. When using maximum likelihood estimation, you also usually get a roughly-normal distribution around the true population estimate.
 
 ```{r}
 hist(tea_data_highn_shuffled_summary$delta) #what does this histogram look like?
@@ -416,8 +441,10 @@ ggplot(data = tea_data_highn, aes(x=condition, y=rating, col=condition))  +
 ```
 
 To do: What does each dot represent? What does the range represent in each graph? What does the confidence interval indicate? What does the SE indicate?
+Each dot represents a simulated data point.
 
 To do: how does this change when you use the low-n experiment?
+The CIs get wider.
 
 To do: Find the shortcut ggplot function so you don't have to calculate these by hand ever again :)
 
@@ -482,12 +509,12 @@ How often did we fail to reject the null hypothesis? When was our p-value greate
 
 ```{r}
 # you'll need all_results_high_n$pvalue
-
+hist(all_results_high_n$pvalue)
 ```
 
 # Part 5: Power curves
 
-In Part 4 you counted how often experiments with 48 participants and a true effect of delta = 1.5 came out significant. That proportion is the study's **power**: the probability of getting p < .05 when there really is an effect. Here you will estimate power for many sample sizes and effect sizes at once, and plot it.
+In Part 4 you counted how often experiments with 48 participants and a true effect of delta = 1.5 came out significant. That proportion is the study's **power**: the probability of getting p \< .05 when there really is an effect. Here you will estimate power for many sample sizes and effect sizes at once, and plot it.
 
 `run_one_experiment()` simulates one experiment with our `make_tea_data()` function and returns its p-value. Run this chunk a few times: you get a different p-value each time.
 
@@ -500,13 +527,14 @@ run_one_experiment <- function(n_total, delta) {
 run_one_experiment(n_total = 48, delta = 1.5)
 ```
 
-To do: Fill in `estimate_power()` so that it runs `n_sims` experiments and returns the proportion of them with p < .05. Hint: `map_dbl(1:n_sims, \(i) run_one_experiment(n_total, delta))` gives you a vector of `n_sims` p-values.
+To do: Fill in `estimate_power()` so that it runs `n_sims` experiments and returns the proportion of them with p \< .05. Hint: `map_dbl(1:n_sims, \(i) run_one_experiment(n_total, delta))` gives you a vector of `n_sims` p-values.
 
 Check your function: `estimate_power(48, 1.5)` should be close to 1 minus the miss rate you found in Part 4, and `estimate_power(48, 0)` should be close to .05.
 
 ```{r}
 estimate_power <- function(n_total, delta, n_sims = 500) {
-  # your code here
+    p_values <- map_dbl(1:n_sims, \(i) run_one_experiment(n_total, delta))
+    mean(p_values < .05)
   
 }
 
@@ -525,14 +553,33 @@ power_curve <- expand_grid(n_total = seq(10, 100, by = 10), # total participants
 To do: Plot the power curves: `n_total` on the x-axis, `power` on the y-axis, and one line per `delta` (hint: `color = factor(delta)`). Add a dashed horizontal line at .8, the conventional target for power (hint: `geom_hline()`).
 
 ```{r}
+ggplot(power_curve, aes(x = n_total, y = power, color = factor(delta))) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = .8, linetype = "dashed") + # conventional target for power
+  geom_hline(yintercept = .05, linetype = "dotted") + # alpha
+  labs(x = "total participants (n_total)",
+       y = "power (proportion of experiments with p < .05)",
+       color = "delta") +
+  theme_classic()
 
 ```
+
 
 To do: Answer these questions.
 
 1.  What is "power" when delta = 0? Why doesn't it go up with more participants?
+When delta = 0, the probability of detecting an effect is .05. Since there is no effect, adding participants will not change your false positive rate.
+
 2.  About how many participants do you need for 80% power when delta = 1? When delta = 0.5?
+
+You need roughly 50 participants for d =1. 
+For when delta is 0.5, you are going to need a lot more. 100 participants barely hit 50% power.
+
 3.  In Part 1, `tea_data` had 18 participants and a true effect of delta = 0.5. About what was its power? If that one experiment had come out significant, how much would you trust it?
+
+That study had less than 25% power. Which is really low power which means that I do not trust the findings. Especially with such a low sample size, even if you get a significant p, that would likely be an extreme case where you are cashing on random chance variation and getting an extremely inflated effect size.
+
 
 **Bonus** Extend `n_total` until delta = 0.5 reaches 80% power. How many participants does it take?
 
